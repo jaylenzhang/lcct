@@ -96,7 +96,6 @@ class PreProcess():
         self.tfidf_data = self.data_dir + self.cf.get('pre_process','tfidf_data')
         self.train_test_rate = self.cf.getfloat('pre_process','train_test_rate')
         self.cross_validation_num = self.cf.getint('pre_process','cross_validation_num')
-        self.ignore_df_rate = self.cf.getfloat('pre_process','ignore_df_rate')
         # set loging 
         ISOTIMEFORMAT='%Y%m%d-%H%M%S'
         time_str = 'pre_process-'+ time.strftime( ISOTIMEFORMAT, time.localtime( time.time() ) )
@@ -114,29 +113,6 @@ class PreProcess():
 
 
     def generate_voc(self):
-        idf_count = dict()
-        doc_num = 0
-        with open(self.wordseg_data,'r') as fin:
-            for line in fin:
-                line = line.rstrip('\n')
-                line_sp = line.split('\t')
-                doc_json = json.loads(line_sp[1])
-                content_seg_list = doc_json['content_seg_list']
-                word_set = set()
-                for sent in content_seg_list:
-                    for w in sent:
-                        if len(w.strip()) == 0:
-                            continue
-                        word_set.add(w)
-                for w in word_set:
-                    idf_count[w] = idf_count.get(w,0) + 1
-                doc_num += 1
-        ignore_word_set = set()
-        for w in idf_count:
-            df = idf_count[w]*1.0 / doc_num
-            if df > self.ignore_df_rate:
-                ignore_word_set.add(w)
-        print >> sys.stderr, '[ignore_word_set]',len(ignore_word_set),' '.join(ignore_word_set)
         word_dict = dict()
         self.get_stopword()
         with open(self.wordseg_data,'r') as fin:
@@ -151,8 +127,6 @@ class PreProcess():
                             continue
                         if w in self.stopword_set:
                             continue
-                        if w in ignore_word_set:
-                            continue
                         word_dict[w] = word_dict.get(w,0) + 1
             word_list = sorted(word_dict.items(),key=lambda x:x[1],reverse=True)
         self.vocab2freq = dict()
@@ -162,7 +136,6 @@ class PreProcess():
                     continue
                 fout.write( '\t'.join([w,str(c)]) + '\n')
                 self.vocab2freq[w] = c
-
         self.Log(' '.join(['[generate_voc]','done']))
     def get_voc(self):
         self.vocab2freq = dict()
@@ -172,6 +145,7 @@ class PreProcess():
             self.Log(' '.join(['[get_voc]','vocab_dat not exists ']) )
             sys.exit(1)
         index = 1
+        # read vocab and assign id 
         with open(self.vocab_data,'r') as fin:
             for line in fin:
                 line = u''+line.rstrip('\n')
@@ -187,9 +161,7 @@ class PreProcess():
                 fout.write('\t'.join([self.id2word[i],str(i)]) + '\n')
 
     def get_tfidf(self,tf_func,idf_func):
-        self.get_voc()
         self.get_stopword()
-
         self.idf = dict()
         doc_list = []
         # 1. idf
@@ -218,20 +190,14 @@ class PreProcess():
                 cls_name = doc_json['cls_name']
                 class_type_dict[cls_name] = class_type_dict.get(cls_name,0) + 1
         idf = idf_func.idf(idf_count,doc_num)
-        cnt = -0
-        for w in idf_count:
-            print '\t'.join([w,str(idf_count[w]),str(idf[w])])
-            if cnt == 10:
-                break
-            cnt += 1
+        
         # 2. asign class_type id 
         cls_type_list = sorted(class_type_dict.items(),key=lambda x:x[1],reverse=True)
-        #print '\n'.join([k[0]+"\t"+str(k[1]) for k in cls_type_list])
         cls_id = 0
-        
         for cls,cnt in cls_type_list:
             class_type_dict[cls] = str(cls_id)
             cls_id += 1
+        
         # 3. compute & write tfidf ,write svm
         doc_id = 0
         doc_id_list = []
@@ -350,9 +316,6 @@ class PreProcess():
             ftrain_map.close()
             ftest.close()
             ftest_map.close()
-
-
-
 
         # 8. split train,test
         train_samples = int(doc_num * self.train_test_rate)
